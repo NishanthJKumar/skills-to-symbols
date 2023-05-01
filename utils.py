@@ -116,6 +116,7 @@ def run_planner(domain_file, problem_file, options):
     for plan_step in ff_plan:
         step_name, _ = plan_step.rsplit('-', 1)
         if step_name not in option_name_to_option:
+            import ipdb; ipdb.set_trace()
             raise Exception("Failed to parse plan step: {}".format(plan_step))
         option_plan.append(option_name_to_option[step_name])
     return option_plan
