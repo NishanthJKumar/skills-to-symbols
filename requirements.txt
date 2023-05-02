@@ -2,3 +2,4 @@ z3-solver
 matplotlib
 imageio[ffmpeg]
 ipdb
+tempfile

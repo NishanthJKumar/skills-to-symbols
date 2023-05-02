@@ -5,6 +5,7 @@ from structs import DecisionTreeClassifier
 from utils import create_domain_file, create_problem_file, run_planner
 import imageio
 import numpy as np
+import os
 
 def render_continuous_playroom_initial_state():
     env = ContinuousPlayroomEnv()
@@ -23,8 +24,8 @@ def demo_continuous_playroom_random_actions():
         action = env.get_random_action()
         obs, _, _, _ = env.step(action)
         images.append(env.render())
-    imageio.mimwrite("continuous_playroom_random_actions.mp4", images)
-    print("Wrote out to continuous_playroom_random_actions.mp4.")
+    imageio.mimwrite("tmp/continuous_playroom_random_actions.mp4", images)
+    print("Wrote out to tmp/continuous_playroom_random_actions.mp4.")
 
 def demo_continuous_playroom_hardcoded_actions():
     env = ContinuousPlayroomEnv(seed=0)
@@ -62,7 +63,7 @@ def demo_continuous_playroom_hardcoded_actions():
     for action in actions:
         obs, _, done, _ = env.step(action)
         images.append(env.render())
-    imageio.mimwrite("continuous_playroom_harcoded_actions.mp4", images)
+    imageio.mimwrite("tmp/continuous_playroom_harcoded_actions.mp4", images)
     print("Wrote out to continuous_playroom_harcoded_actions.mp4.")
 
 def demo_continuous_playroom_random_options(num_steps=50, render=False):
@@ -101,7 +102,7 @@ def demo_continuous_playroom_random_options(num_steps=50, render=False):
         if render:
             images.append(env.render())
     if render:
-        imageio.mimwrite("continuous_playroom_random_options.mp4", images)
+        imageio.mimwrite("tmp/continuous_playroom_random_options.mp4", images)
         print("Wrote out to continuous_playroom_random_options.mp4.")
 
 def demo_option_plan(env, obs, goal, plan, render=False, outfile=None,
@@ -138,7 +139,7 @@ def demo_continuous_playroom_skills_to_symbols(do_tests=False):
             option_to_preconditions, option_to_effects)
     operators, propositions = create_operators_from_options(
         options, option_to_preconditions, option_to_effects)
-    domain_file = "playroom_operators.pddl"
+    domain_file = "tmp/playroom_operators.pddl"
     create_domain_file(operators, propositions, "playroom", domain_file)
     obs = env.reset()
     # Make the monkey cry
@@ -148,12 +149,12 @@ def demo_continuous_playroom_skills_to_symbols(do_tests=False):
     )
     sym_initial_state = {p for p in propositions if p.classifier.predict(obs)}
     sym_goal = {p for p in propositions if goal.issubset(p.classifier)}
-    problem_file = "playroom_problem.pddl"
+    problem_file = "tmp/playroom_problem.pddl"
     create_problem_file(sym_initial_state, sym_goal, "playroom", problem_file)
-    plan = run_planner(domain_file, problem_file, options)
+    plan = run_planner(domain_file, problem_file, options, True)
     print("Found plan:", [o.name for o in plan])
     # Run plan in env
-    demo_option_plan(env, obs, goal, plan, render=True, outfile="playroom_result.mp4")
+    demo_option_plan(env, obs, goal, plan, render=True, outfile="tmp/playroom_result.mp4")
 
 
 
@@ -200,29 +201,33 @@ def test_preconditions_and_effects(options, env,
             current_option = None
 
 def test_domain_and_problem(domain_file, problem_file, options, env, obs, goal):
-    plan = run_planner(domain_file, problem_file, options)
+    plan = run_planner(domain_file, problem_file, options, True)
     print("Found plan:", [o.name for o in plan])
     # Run plan in env
-    demo_option_plan(env, obs, goal, plan, render=True, outfile="playroom_result.mp4")
+    demo_option_plan(env, obs, goal, plan, render=True, outfile="tmp/playroom_result.mp4")
 
 
 if __name__ == "__main__":
+    if not os.path.exists("tmp"):
+        os.makedirs("tmp")
     # render_continuous_playroom_initial_state()
     # demo_continuous_playroom_random_actions()
     # demo_continuous_playroom_hardcoded_actions()
     # demo_continuous_playroom_random_options(num_steps=50000)
     # demo_continuous_playroom_random_options(num_steps=100, render=True)
-    # demo_continuous_playroom_skills_to_symbols()
-    domain_file = "playroom_operators.pddl"
-    problem_file = "playroom_problem.pddl"
-    env = ContinuousPlayroomEnv()
-    feature_names = env.OBS_VARS
-    options = create_playroom_options()
-    obs = env.reset()
-    # Make the monkey cry
-    goal = DecisionTreeClassifier(
-        feature_names=feature_names,
-        tuples=(False, (env.OBS_VAR_NAME_TO_IDX["monkey_cry"], ">=", 1e-6), True),
-    )
-    test_domain_and_problem(domain_file, problem_file, options, env, obs, goal)    
+    demo_continuous_playroom_skills_to_symbols()
+    # # Use premade PDDL files
+    # domain_file = "tmp/playroom_operators.pddl"
+    # problem_file = "tmp/playroom_problem.pddl"
+    # env = ContinuousPlayroomEnv()
+    # feature_names = env.OBS_VARS
+    # options = create_playroom_options()
+    # options = partition_playroom_options(options)
+    # obs = env.reset()
+    # # Make the monkey cry
+    # goal = DecisionTreeClassifier(
+    #     feature_names=feature_names,
+    #     tuples=(False, (env.OBS_VAR_NAME_TO_IDX["monkey_cry"], ">=", 1e-6), True),
+    # )
+    # test_domain_and_problem(domain_file, problem_file, options, env, obs, goal)    
 

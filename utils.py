@@ -2,6 +2,9 @@ import itertools
 import re
 import time
 import subprocess
+import sys
+import os
+import tempfile
 
 
 def get_all_subsets(iterable):
@@ -99,21 +102,60 @@ def create_problem_file(init, goal, domain_name, filename, problem_name=None):
     print(f"Wrote out to {filename}.")
 
 
-def run_planner(domain_file, problem_file, options):
-    cmd_str = f"$FF_PATH -o {domain_file} -f {problem_file}"
-    start_time = time.time()
+def run_planner(domain_file, problem_file, options, optimal):
+    """A version of SeSamE that runs the Fast Downward planner to produce a
+    single skeleton, then calls run_low_level_search() to turn it into a plan.
+
+    Usage: Build and compile the Fast Downward planner, then set the environment
+    variable FD_EXEC_PATH to point to the `downward` directory. For example:
+    1) git clone https://github.com/aibasel/downward.git
+    2) cd downward && ./build.py
+    3) export FD_EXEC_PATH="<your path here>/downward"
+
+    On MacOS, to use gtimeout:
+    4) brew install coreutils
+
+    Important Note: Fast Downward will potentially not work with null operators
+    (i.e. operators that have an empty effect set). This happens when
+    Fast Downward grounds the operators, null operators get pruned because they
+    cannot help satisfy the goal. In A* search Discovered Failures could
+    potentially add effects to null operators, but this ability is not
+    implemented here.
+    """
+    timeout_cmd = "gtimeout" if sys.platform == "darwin" else "timeout"
+    if optimal:
+        alias_flag = "--alias seq-opt-lmcut"
+    else:  # satisficing
+        alias_flag = "--alias lama-first"
+    # Run Fast Downward followed by cleanup. Capture the output.
+    assert "FD_EXEC_PATH" in os.environ, \
+        "Please follow the instructions in the docstring of this method!"
+    fd_exec_path = os.environ["FD_EXEC_PATH"]
+    exec_str = os.path.join(fd_exec_path, "fast-downward.py")
+    # The SAS file is used when augmenting the grounded operators,
+    # during dicovered failures, and it's important that we give
+    # it a name, because otherwise Fast Downward uses a fixed
+    # default name, which will cause issues if you run multiple
+    # processes simultaneously.
+    sas_file = tempfile.NamedTemporaryFile(delete=False).name
+    # Run to generate sas
+    cmd_str = (f"{timeout_cmd} {10} {exec_str} {alias_flag} "
+               f"--sas-file {sas_file} {domain_file} {problem_file}")
+    subprocess.getoutput(cmd_str)
+    cmd_str = (f"{timeout_cmd} {10} {exec_str} {alias_flag} {sas_file}")
     output = subprocess.getoutput(cmd_str)
-    if "goal can be simplified to FALSE" in output or "unsolvable" in output:
-        raise Exception("Plan not found with FF! Error: {}".format(output))
-    ff_plan = re.findall(r"\d+?: (.+)", output.lower())
-    if not ff_plan:
-        raise Exception("Plan not found with FF! Error: {}".format(output))
-    if ff_plan[-1] == "reach-goal":
-        ff_plan = ff_plan[:-1]
+    cleanup_cmd_str = f"{exec_str} --cleanup"
+    subprocess.getoutput(cleanup_cmd_str)
+    # Extract the skeleton from the output and compute the atoms_sequence.
+    if "Solution found!" not in output:
+        raise ValueError(f"Plan not found with FD! Error: {output}")
+    skeleton_str = re.findall(r"(.+) \(\d+?\)", output)
+    if not skeleton_str:
+        raise ValueError(f"Plan not found with FD! Error: {output}")
     # Parse the plan into options
     option_name_to_option = {o.name : o for o in options}
     option_plan = []
-    for plan_step in ff_plan:
+    for plan_step in skeleton_str:
         step_name, _ = plan_step.rsplit('-', 1)
         if step_name not in option_name_to_option:
             import ipdb; ipdb.set_trace()
